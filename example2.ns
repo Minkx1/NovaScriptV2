@@ -1,0 +1,4 @@
+def main(args){
+    println("Hello World");
+    println("You said: " + getln("Say Something: "));
+}
