@@ -1,3 +1,8 @@
 a = 5;
 b = 10;
 c = a + b;
+d = a + b + c;
+e = "AbabaGalaMaga";
+__stdout__(c); __stdout__("\n");
+__stdout__(d); __stdout__("\n");
+__stdout__(e);

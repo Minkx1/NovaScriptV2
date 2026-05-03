@@ -1,6 +1,10 @@
+"""
+NovaScriptV2 - Errors
+Made by Minkx1.
+"""
+
 class NovaScriptError(Exception):
     pass
-
 
 class LexerError(NovaScriptError):
     pass

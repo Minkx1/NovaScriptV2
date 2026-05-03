@@ -1,118 +1,141 @@
+"""
+NovaScriptV2 - Main EntryPoint
+Made by Minkx1.
+"""
+
 import os, sys
 
+from rich import print
+
 import src.lexer as lexer
-# import src.parser as parser
-# import src.compiler as compiler
+import src.parser as parser
+import src.compiler as compiler
 
 from src.errors import NovaScriptError
 
-_script_arguments_flags = {
-    "-d": "debug",
-    "--debug": "debug",
-    "-t": "target_script",
-    "--target": "target_script",
-    "-h": "help",
-    "--help": "help",
-}
-_script_extensions = [".ns"]
-
-def _validate_script(script_file_name: str) -> None:
-    if not os.path.exists(script_file_name):
-        raise Exception(f"File not found: {script_file_name}")
-
-    if not any(script_file_name.endswith(ex) for ex in _script_extensions):
-        raise Exception(
-            f"Source script file must have one of {_script_extensions} extension."
-        )
-
-def _show_arguments_hint() -> None:
-    print("\nNovaScript V2 Usage:")
-    print("  python main.py <source_file.ns> [flags]")
-    print("\nAvailable flags:")
-    for flag, action in _script_arguments_flags.items():
-        print(f"  {flag.ljust(10)} -> {action}")
-    print()
-
-def _process_args(args: list[str]) -> dict:
-    res = {
-        "source_script": None,
-        "debug": False,
-        "help": False,
-        "target_script": None,
+class NovaScript:
+    _script_arguments_flags = {
+        "-d": "debug",
+        "--debug": "debug",
+        "-t": "target_script",
+        "--target": "target_script",
+        "-h": "help",
+        "--help": "help",
     }
+    _script_extensions = [".ns"]
 
-    for arg in args:
-        if not arg.startswith("-"):
-            # Якщо це шлях до файлу
-            res["source_script"] = arg
-            continue
+    def __init__(self, sys_args: list[str]):
+        self.sys_args = sys_args
+
+    @staticmethod
+    def _validate_script(script_file_name: str) -> None:
+        if not os.path.exists(script_file_name):
+            raise Exception(f"File not found: {script_file_name}")
+
+        if not any(script_file_name.endswith(ex) for ex in NovaScript._script_extensions):
+            raise Exception(f"Source script file must have one of {NovaScript._script_extensions} extension.")
+
+    @staticmethod
+    def _show_arguments_hint() -> None:
+        print("\nNovaScript V2 Usage:")
+        print("  python main.py <source_file.ns> [flags]")
+        print("\nAvailable flags:")
+        for flag, action in NovaScript._script_arguments_flags.items():
+            print(f"  {flag.ljust(10)} -> {action}")
+        print()
+
+    def _process_args(self) -> dict:
+        args = self.sys_args
+        res = {
+            "source_script": None,
+            "debug": False,
+            "help": False,
+            "target_script": None,
+        }
+
+        for arg in args:
+            if not arg.startswith("-"):
+                # Якщо це шлях до файлу
+                res["source_script"] = arg
+                continue
+            
+            # Обробка прапорців (можуть бути як --debug, так і --target=out.py)
+            parts = arg.split("=", 1)
+            flag_name = parts[0]
+            
+            if flag_name not in NovaScript._script_arguments_flags:
+                raise Exception(f"Unknown flag '{flag_name}'. Call '--help' for usage.")
+            
+            flag_type =NovaScript. _script_arguments_flags[flag_name]
+
+            # Логіка для значень
+            if len(parts) > 1:
+                # Якщо є '=', записуємо значення (наприклад, для target_script)
+                res[flag_type] = parts[1]
+            else:
+                # Якщо '=' немає, це булевий прапорець (True)
+                res[flag_type] = True
+
+        # Якщо попросили допомогу — виводимо і виходимо
+        if res["help"]:
+            NovaScript._show_arguments_hint()
+            sys.exit(0)
+
+        # Валідація скрипта, якщо він вказаний
+        if res["source_script"]:
+            NovaScript._validate_script(res["source_script"])
         
-        # Обробка прапорців (можуть бути як --debug, так і --target=out.py)
-        parts = arg.split("=", 1)
-        flag_name = parts[0]
-        
-        if flag_name not in _script_arguments_flags:
-            raise Exception(f"Unknown flag '{flag_name}'. Call '--help' for usage.")
-        
-        flag_type = _script_arguments_flags[flag_name]
+        return res
 
-        # Логіка для значень
-        if len(parts) > 1:
-            # Якщо є '=', записуємо значення (наприклад, для target_script)
-            res[flag_type] = parts[1]
-        else:
-            # Якщо '=' немає, це булевий прапорець (True)
-            res[flag_type] = True
-
-    # Якщо попросили допомогу — виводимо і виходимо
-    if res["help"]:
-        _show_arguments_hint()
-        sys.exit(0)
-
-    # Валідація скрипта, якщо він вказаний
-    if res["source_script"]:
-        _validate_script(res["source_script"])
+    @staticmethod
+    def _print_lexer_debug(TOKENS:list[lexer.Token]): # , 
+        print("================")
+        print(f"Lexer execution. Generated {len(TOKENS)} tokens: \n")
+        print([tok for tok in TOKENS])
+        print("================\n")
+    @staticmethod
+    def _print_parser_debug(AST:parser.AbstractSyntaxTree):
+        print("================")
+        print(f"Abstract Syntax Tree: \n")
+        print(AST.to_json())
+        print("================\n")
+    @staticmethod
+    def _print_compiler_debug(BYTECODE):
+        print("================")
+        print(f"Bytecode: \n")
+        for instr in BYTECODE:
+            print(instr)
+        print("================\n")
     
-    return res
+    def _print_debug(self):
+        self._print_lexer_debug(self.TOKENS)
+        self._print_parser_debug(self.AST)
+        self._print_compiler_debug(self.COMPILER.bytecode)
 
-def _print_lexer_debug(TOKENS):
-    print("Lexer execution. Generated tokens: \n")
-    string = ""
-    for i in TOKENS:
-        string += str(i) + "\n"
+    def execute(self) -> None:
+        script_config = self._process_args()
 
-    print(string)
-def _print_parser_debug(AST):
-    pass
-def _print_compiler_debug(BYTECODE):
-    pass
+        src: str | None = script_config["source_script"]
+        debug: bool = script_config["debug"]
+        # target: str | None = script_config["target_script"]
 
-def compile_script(args: list[str]) -> None:
-    script_config = _process_args(args)
+        src_code: list[str] = []
+        with open(src, "r") as file:
+            src_code = file.readlines()
 
-    src: str | None = script_config["source_script"]
-    debug: bool = script_config["debug"]
-    target: str | None = script_config["target_script"]
+        self.TOKENS = lexer.Lexer(src_code).tokenize()
+        self.AST = parser.Parser(self.TOKENS).parse_program()
+        self.COMPILER = compiler.PyCompiler(self.AST)
 
-    src_code: list[str] = []
-    with open(src, "r") as file:
-        src_code = file.readlines()
+        self.COMPILER.compile()
 
-    TOKENS: list[lexer.Token] = lexer.Lexer(src_code).tokenize()
-    # AST = parser.get_ast(TOKENS)
-    # COMPILER = compiler.Compiler()
-    # BYTECODE = COMPILER.make_file()
-    if debug:
-        _print_lexer_debug(TOKENS)
-        # _print_parser_debug(AST)
-        # _print_compiler_debug(BYTECODE)
+        if debug:
+            self._print_debug()
 
-    # return
-
+        self.COMPILER.execute()
 
 if __name__ == "__main__":
     args = ["example1.ns", "-d"]
     # args = sys.argv[1:]
-    compile_script(args)
-
-    # print('Hello World!')
+    NS = NovaScript(args)
+    NS.execute()

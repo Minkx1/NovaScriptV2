@@ -1,1 +1,1 @@
-python.exe main.py exmaple1.ss
+python.exe main.py exmaple1.ss -d
