@@ -4,10 +4,9 @@
 - Compilation with: 
   * Python VM
 
-- You can:
-  * Use `int` and `string` variables
-  * Use mathematical operations like `+, -, /, *, %, **`
-  * Show value with **`__stdout__()`** call
+- Functionality:
+  * `int`, `float`, `string` types and operations with them + `to_int()`,`to_float()` and `to_str()` functions.
+  * `prinln()`, `getln()` functions.
 
 ## TODO:
 - Compilation with: 

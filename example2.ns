@@ -1,4 +1,6 @@
-def main(args){
-    println("Hello World");
-    println("You said: " + getln("Say Something: "));
+import std.io  
+
+def main(args: String[]){
+    io.println("Hello World");
+    io.println("You said: " + getln("Say Something: "));
 }

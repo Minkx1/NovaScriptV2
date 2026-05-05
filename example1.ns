@@ -1,8 +1,21 @@
-a = 5;
-b = 10;
-c = a + b;
-d = a + b + c;
-e = "AbabaGalaMaga";
-__stdout__(c); __stdout__("\n");
-__stdout__(d); __stdout__("\n");
-__stdout__(e);
+println("=== Розрахунок доходу ===");
+
+println("Введи погодинну ставку:");
+rate = to_float(getln("> "));
+
+println("Введи кількість годин:");
+hours = to_int(getln("> "));
+
+income = rate * hours;
+
+println("-----");
+println("Ставка: " + to_str(rate));
+println("Години: " + to_str(hours));
+println("Дохід: " + to_str(income));
+
+println("-----");
+
+/* бонус: перевірка вкладених викликів
+MULTILINE
+*/
+println("Подвійний дохід: " + to_str(to_float(income) * 2));

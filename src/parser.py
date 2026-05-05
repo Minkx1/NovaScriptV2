@@ -3,6 +3,8 @@ NovaScriptV2 - Parser
 Made by Minkx1.
 """
 
+from time import perf_counter
+
 from .errors import NovaScriptError, ParserError
 from .lexer import TokenType, Token
 
@@ -86,15 +88,16 @@ class Assign(ASTNode):
             "target": self.target.to_json(),
             "value": self.value.to_json(),
         }
-
-
-class STDOUTCall(ASTNode):
-    def __init__(self, statement:ASTNode):
+    
+class Call(ASTNode):
+    def __init__(self, name, args:list[ASTNode], keywords_args:dict[str, ASTNode]):
         super().__init__()
-        self.value = statement
+        self.name = name
+        self.args = args
+        self.kwargs = keywords_args
 
     def to_json(self):
-        return {"type": "STDOUT-call", "value": self.value.to_json()}
+        return {"type": "Function-Call", "name": self.name, "args": [a.to_json() for a in self.args], "kwargs": {k: v.to_json() for k, v in self.kwargs.items()},}
 
 class Identifier(ASTNode):
     def __init__(self, value: Token):
@@ -106,26 +109,26 @@ class Identifier(ASTNode):
     def to_json(self):
         return {"type": "Identifier", "value": self.value}
 
-class Number(ASTNode):
+class LiteralNumber(ASTNode):
     def __init__(self, value: float | int | Token):
         if isinstance(value, Token):
             self.value = value.value
         elif isinstance(value, float | int):
             self.value = value
         else:
-            raise ParserError("Unsupported Number value type.")
+            raise ParserError("Unsupported LiteralNumber value type.")
 
     def to_json(self):
         return {"type": "LiteralNumber", "value": self.value}
 
-class String(ASTNode):
+class LiteralString(ASTNode):
     def __init__(self, value: str | Token):
         if isinstance(value, Token):
             self.value = value.value
         elif isinstance(value, str):
             self.value = value
         else:
-            raise ParserError("Unsupported String value type.")
+            raise ParserError("Unsupported LiteralString value type.")
 
     def to_json(self):
         return {"type": "LiteralString", "value": self.value}
@@ -134,21 +137,25 @@ class String(ASTNode):
 class Parser:
     def __init__(self, tokens: list[Token]):
         self.tokens = tokens
-        self.pos = 0
+        self.AST = None
+        self._pos = 0
+
+        self.start_t = perf_counter()
+        self.time = 0
 
     @property
     def cur_tok(self):
-        return self.tokens[self.pos]
+        return self.tokens[self._pos]
     
     def peek_tok(self, step=1):
-        if self.pos + step < len(self.tokens):
-            return self.tokens[self.pos + step]
+        if self._pos + step < len(self.tokens):
+            return self.tokens[self._pos + step]
         else:
             raise EOFError
     
     def advance(self, step=1):
-        if self.pos + step < len(self.tokens):
-            self.pos += step
+        if self._pos + step < len(self.tokens):
+            self._pos += step
         else:
             raise EOFError
     
@@ -156,33 +163,21 @@ class Parser:
         if self.cur_tok.type == tok_type:
             self.advance()
         else:
-            raise ParserError(f"Expected {tok_type.name}, instead got {self.cur_tok.type.name} at position {self.pos}")
+            raise ParserError(f"Expected {tok_type.name}, instead got {self.cur_tok.type.name} at position {self.cur_tok.pos}")
 
 
     def parse_program(self) -> AbstractSyntaxTree:
         statements = []
 
         while self.cur_tok.type != TokenType.EOF:
-            st: ASTNode | None = self.parse_statement()
+            st: ASTNode | None = self.parse_expression()
             if st is not None:
                 self.expect(TokenType.SEMICOLON)
                 statements.append(st)
 
-        return AbstractSyntaxTree(statements)
-
-    def parse_statement(self) -> None | ASTNode:
-        tok = self.cur_tok
-
-        if tok.type == TokenType.EOF:
-            return self.parse_eof()
-        elif tok.type == TokenType.SEMICOLON:
-            return self.parse_semicolon()
-        elif tok.type == TokenType.STDOUT:
-            return self.parse_stdout()
-        elif tok.type == TokenType.IDENTIFIER and self.peek_tok(1).type == TokenType.ASSIGN:
-            return self.parse_assign()
-        else:
-            return self.parse_expression()
+        self.AST = AbstractSyntaxTree(statements)
+        self.time = perf_counter() - self.start_t
+        return self.AST
 
     def parse_standart_case(self) -> None:
         # cur_tok.type == _
@@ -194,14 +189,32 @@ class Parser:
 
     def parse_semicolon(self) -> None:
         # cur_tok.type == ;
-        raise ParserError(f"Unexpected ; at {self.pos}.")
+        raise ParserError(f"Unexpected ; at {self.cur_tok.pos}.")
 
-    def parse_stdout(self) -> None|ASTNode:
-        self.advance() # skipping stdout tok
+    def parse_call(self) -> None|ASTNode:
+        name = self.cur_tok.value # call token = call name
+        args = []
+        kwargs = {}
+
+        self.advance()
         self.expect(TokenType.LPAREN)
-        expr = self.parse_expression()
+
+        while(self.cur_tok.type != TokenType.RPAREN):
+            # f(id1, op1+op2, arg1=id2, arg2 = op1+op2) 
+            if self.cur_tok.type == TokenType.COMMA:
+                self.advance()
+                continue
+            else:
+                expr = self.parse_expression()
+                if expr.__class__ == Assign:
+                    key = expr.target.value
+                    value = expr.value
+                    kwargs[key] = value
+                else:
+                    args.append(expr)
+
         self.expect(TokenType.RPAREN)
-        return STDOUTCall(expr)
+        return Call(name, args, kwargs)
 
     def parse_assign(self) -> None|ASTNode:
         id_node = Identifier(self.cur_tok)
@@ -247,26 +260,37 @@ class Parser:
         return left
 
     def parse_primary(self) -> ASTNode:
-        """Рівень 4: Базові типи (Числа, Змінні, Рядки) та ДУЖКИ"""
+        """Рівень 4: Базові типи та ДУЖКИ"""
         tok = self.cur_tok
         
-        if tok.type == TokenType.NUMBER:
+        if tok.type == TokenType.EOF:
+            return self.parse_eof()
+        
+        elif tok.type == TokenType.SEMICOLON:
+            return self.parse_semicolon()
+        
+        elif tok.type == TokenType.NUMBER:
             self.advance()
-            return Number(tok)
+            return LiteralNumber(tok)
             
         elif tok.type == TokenType.STRING:
             self.advance()
-            return String(tok)
+            return LiteralString(tok)
             
         elif tok.type == TokenType.IDENTIFIER:
-            self.advance()
-            return Identifier(tok)
+            if self.peek_tok().type == TokenType.LPAREN:
+                return self.parse_call()
+            elif self.peek_tok().type == TokenType.ASSIGN:
+                return self.parse_assign()
+            else:
+                id = Identifier(tok)
+                self.advance()
+                return id
             
         elif tok.type == TokenType.LPAREN:
             self.advance() # Пропускаємо ліву дужку '('
             expr = self.parse_expression() # РЕКУРСІЯ! Парсимо все, що всередині
             self.expect(TokenType.RPAREN)  # Вимагаємо праву дужку ')'
             return expr
-            
         else:
-            raise ParserError(f"Unexpected token in expression: {tok.type.name} at {self.pos}")
+            raise ParserError(f"Unexpected token in expression: {tok.type.name} at {tok.line}:{tok.col}")

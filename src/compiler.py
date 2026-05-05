@@ -18,12 +18,17 @@ class Instruction:
         return f"{self.opcode:<20} {self.arg}"
 
 class BaseCompiler:
-    def __init__(self, AST: 'AbstractSyntaxTree'):
+    def __init__(self, AST: 'AbstractSyntaxTree', environment: dict):
         self.AST = AST
         self.bytecode = None
+        self.ENV = environment
+        
+        self.start_t = perf_counter()
+        self.time = 0
 
     def compile(self):
         self.visit(self.AST)
+        self.time = perf_counter() - self.start_t
         return self.bytecode
 
     def visit(self, node: 'ASTNode'):
@@ -37,11 +42,20 @@ class BaseCompiler:
     def execute(self):
         raise NotImplementedError
 
+    def finish_and_wait(self, execution_start_time:float=0):
+        import time
+        delta_t = time.perf_counter()-execution_start_time
+        print(f"\n\nExecuted in {delta_t:0.4f} seconds.")
+        try:
+            input("Press ENTER to continue...")
+        except KeyboardInterrupt:
+            pass
+
 # --- ПАЙТОН КОМПІЛЯТОР ---
 
 class PyCompiler(BaseCompiler):
-    def __init__(self, AST: 'AbstractSyntaxTree'):
-        super().__init__(AST)
+    def __init__(self, AST: 'AbstractSyntaxTree', environment: dict):
+        super().__init__(AST, environment)
         self.bytecode = Bytecode()
         # Для Python 3.11+ LOAD_GLOBAL потребує флаг (True - globals, False - builtins)
         self.is_modern_python = True 
@@ -56,12 +70,10 @@ class PyCompiler(BaseCompiler):
         self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
-    def visit_Number(self, node: 'Number'):
+    def visit_LiteralNumber(self, node: 'LiteralNumber'):
         self.emit('LOAD_CONST', node.value)
-
-    def visit_String(self, node: 'String'):
+    def visit_LiteralString(self, node: 'LiteralString'):
         self.emit('LOAD_CONST', node.value)
-
     def visit_Identifier(self, node: 'Identifier'):
         self.emit('LOAD_NAME', node.value)
 
@@ -102,29 +114,39 @@ class PyCompiler(BaseCompiler):
             }    
             # Примітка: В Python 3.11+ назви деяких інструкцій змінилися на BINARY_OP
             self.emit(op_map[node.op.value])
-
-    def visit_STDOUTCall(self, node: 'STDOUTCall'):
+    
+    def visit_Call(self, node: "Call"):
         if self.is_modern_python:
-            self.emit('LOAD_GLOBAL', (True, 'print'))
-            self.visit(node.value)
-            self.emit('LOAD_CONST', '')      # значення для end
-            self.emit('LOAD_CONST', True)    # значення для flush
-            
-            self.emit('KW_NAMES', ('end', 'flush'))
+            func_name = node.name
+            args:list[ASTNode] = node.args
+            kwargs:dict[str, ASTNode] = node.kwargs
 
-            self.emit('CALL', 3)
+            self.emit('LOAD_GLOBAL', (True, func_name))
             
+            i = 0
+            kw_list = []
+
+            for arg in args:
+                self.visit(arg) # Adds Args to stack
+                i += 1
+
+            for k, v in kwargs:
+                kw_list.append(k)
+                self.visit(v) # Adds keywords arguments value to stack
+                i += 1
+            kw_list = tuple(kw_list)
+    
+            self.emit('KW_NAMES', kw_list)
+            self.emit('CALL', i)
         else:
-            self.emit('LOAD_GLOBAL', (True, 'print'))
-            
-            self.visit(node.value)
-            self.emit('LOAD_CONST', '')              # end=''
-            self.emit('LOAD_CONST', True)            # flush=True
-            self.emit('LOAD_CONST', ('end', 'flush'))
-            
-            self.emit('CALL_FUNCTION_KW', 3)
-
-    def execute(self):
+            raise NotImplementedError("Calling instructions for python3.10- are not implemented yet.")
+        
+    def execute(self, finish_and_wait:bool = True):
         if not self.bytecode:
             self.compile()
-        exec(self.bytecode.to_code())
+
+        start_time = perf_counter()
+        exec(self.bytecode.to_code(), self.ENV)
+
+        if finish_and_wait: 
+            self.finish_and_wait(start_time)

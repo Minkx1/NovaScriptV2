@@ -3,6 +3,7 @@ NovaScriptV2 - Lexer
 Made by Minkx1.
 """
 
+import time
 from enum import Enum, auto
 from typing import Any, Optional
 
@@ -17,20 +18,17 @@ class TokenType(Enum):
     STRING = auto()
 
     # Keywords
+    IF = auto()
+    ELSE = auto()
+    ELIF = auto()
     TRUE = auto()
     FALSE = auto()
-    STDOUT = auto()
-    STDIN = auto()
+    AND = auto()
+    OR = auto()
 
-    # IF = auto()
-    # ELSE = auto()
-    # ELIF = auto()
-    # AND = auto()
-    # OR = auto()
-
-    # IMPORT = auto()
-    # WHILE = auto()
-    # FOR = auto()
+    IMPORT = auto()
+    WHILE = auto()
+    FOR = auto()
 
     # Operators
     ASSIGN = auto()       # =
@@ -66,11 +64,14 @@ class TokenType(Enum):
     EOF = auto()
 
 KEYWORDS = {
-    "__stdout__": TokenType.STDOUT,
-    "__stdin__": TokenType.STDIN,
+    "if": TokenType.IF,
+    "else": TokenType.ELSE,
+    "elif": TokenType.ELIF,
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
-    # "import": IMPORT,
+    "OR": TokenType.OR, "||": TokenType.OR,
+    "AND": TokenType.AND, "&&": TokenType.AND,
+    "import": TokenType.IMPORT,
 }
 
 
@@ -87,8 +88,9 @@ class Token:
     def __str__(self) -> str:
         return self.__repr__()
     
-    def __init_repr__(self) -> str:
-        return f"Token({self.type}, {self.value}, {self.line}, {self.col})"
+    @property
+    def pos(self)->str:
+        return f"{self.line}:{self.col}"
 
 
 class Lexer:
@@ -98,6 +100,10 @@ class Lexer:
         self.char = 0
         self.tokens: list[Token] = []
         self.eof = False
+
+        
+        self.start_time = time.perf_counter() 
+        self.time = 0
 
     def error(self, message: str):
         raise LexerError(message)
@@ -139,10 +145,15 @@ class Lexer:
         while self.cur_char() in " \t\n":
             self.advance()
     def skip_comments(self):
-        if self.cur_char() == "/" and self.peek_char() == "/":
-            while self.cur_char() != "\n" and not self.eof:
-                self.advance()
-            self.advance() # пропускаємо сам \n після коментаря
+        if self.cur_char() == "/":
+            if self.peek_char() == "/": # inline comment //
+                while self.cur_char() != "\n" and not self.eof:
+                    self.advance()
+                self.advance() # skip "\n" after comments
+            if self.peek_char() == "*": # multiline comment /*
+                while not(self.cur_char()=="*" and self.peek_char() == "/") and not self.eof:
+                    self.advance()
+                self.advance(); self.advance() # Skipping '*/' 
         self.skip_whitespace()
 
     def parse_number(self) -> Token:
@@ -248,8 +259,11 @@ class Lexer:
             return Token(TokenType.STAR, '*', start_line, start_char)
         
         elif char == '/':
-            self.advance()
-            return Token(TokenType.SLASH, '/', start_line, start_char)
+            if self.peek_char() == '/' or self.peek_char() == "*":
+                self.skip_comments()
+            else:
+                self.advance()
+                return Token(TokenType.SLASH, '/', start_line, start_char)
         
         elif char == '%':
             self.advance()
@@ -344,24 +358,6 @@ class Lexer:
         else:
             self.push_token(Token(TokenType.EOF, '\\0', self.line, self.char+1))
         
+        self.time = time.perf_counter() - self.start_time
         return self.tokens
     
-
-if __name__ == "__main__":
-    # Tests
-    code = ["a = 5;", "b = 10;", "__stdout__(a+b);"]
-    TOKENS = Lexer(code).tokenize()
-    # print(TOKENS)
-    print(f"=== Generated {len(TOKENS)} tokens === \n")
-
-    string = ""
-    for i in TOKENS:
-        string += str(i) + "\n"
-
-    print(string)
-
-    string = "["
-    for i in TOKENS:
-        string += i.__init_repr__() + ", "
-
-    print(string+']')
