@@ -1,6 +1,16 @@
-import std.io  
+import std.math 
+//import python.threading as t
 
-def main(args: String[]){
-    io.println("Hello World");
-    io.println("You said: " + getln("Say Something: "));
+def main(args: string){
+    print("Hello World");
+    print("You said: " + input("Say Something: "));
+    print(math.pi);
+
+    def w(index: int = 1488){
+        while(index>0){
+            print(index);
+            index-=1;
+        }
+    }
+    //t.Thread(w).run();
 }

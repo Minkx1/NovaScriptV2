@@ -1,21 +1,18 @@
-println("=== Розрахунок доходу ===");
+print("Hello World!");
+Aleph = to_int(input("Введи ціле число: "));
+if (Aleph<0) { print("Ти дибіл?"); }
+if (Aleph % 3 == 0){
+    print("Кратне 3.");
+}
+elif (Aleph % 3 == 1){
+    print("Остача - 1");
+}
+else {
+    print("Остача - 2");
+}
 
-println("Введи погодинну ставку:");
-rate = to_float(getln("> "));
+while(true){
+    print("You said: " + input("Say smth: "));
+}
 
-println("Введи кількість годин:");
-hours = to_int(getln("> "));
-
-income = rate * hours;
-
-println("-----");
-println("Ставка: " + to_str(rate));
-println("Години: " + to_str(hours));
-println("Дохід: " + to_str(income));
-
-println("-----");
-
-/* бонус: перевірка вкладених викликів
-MULTILINE
-*/
-println("Подвійний дохід: " + to_str(to_float(income) * 2));
+// input("");

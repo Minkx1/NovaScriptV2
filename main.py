@@ -150,7 +150,7 @@ class NovaScript:
 
 
 if __name__ == "__main__":
-    args = "example1.ns -d -l=com -b -e".split(" ")
+    args = "example1.ns --debug --level=com -e".split(" ")
     # args = sys.argv[1:] 
     
     if not args:

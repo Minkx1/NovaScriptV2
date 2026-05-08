@@ -1,1 +1,0 @@
-python.exe main.py exmaple1.ss -d

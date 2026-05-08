@@ -30,6 +30,9 @@ class TokenType(Enum):
     WHILE = auto()
     FOR = auto()
 
+    TRY = auto()
+    EXCEPT = auto()
+
     # Operators
     ASSIGN = auto()       # =
     PLUS = auto()         # +
@@ -69,11 +72,17 @@ KEYWORDS = {
     "elif": TokenType.ELIF,
     "true": TokenType.TRUE,
     "false": TokenType.FALSE,
-    "OR": TokenType.OR, "||": TokenType.OR,
-    "AND": TokenType.AND, "&&": TokenType.AND,
+    "or": TokenType.OR, "||": TokenType.OR,
+    "and": TokenType.AND, "&&": TokenType.AND,
+    "while": TokenType.WHILE,
+    "for": TokenType.FOR,
+    "try": TokenType.TRY,
+    "except": TokenType.EXCEPT,
     "import": TokenType.IMPORT,
 }
 
+COMPARISONS = (TokenType.EQ, TokenType.NE, TokenType.LE, TokenType.LT, TokenType.GE, TokenType.GT)
+BINARY_OP = (TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT, TokenType.POWER)
 
 class Token:
     """Represents a single token"""

@@ -10,6 +10,8 @@ class LexerError(NovaScriptError):
     pass
 class ParserError(NovaScriptError):
     pass
+class ValidatorError(NovaScriptError):
+    pass
 class SyntaxError(NovaScriptError):
     pass
 class CompilerError(NovaScriptError):
