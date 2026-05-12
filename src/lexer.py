@@ -4,6 +4,7 @@ Made by Minkx1.
 """
 
 import time
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Optional
 
@@ -32,11 +33,14 @@ class TokenType(Enum):
 
     TRY = auto()
     EXCEPT = auto()
+    NOT = auto()          # !
 
     # Operators
     ASSIGN = auto()       # =
     PLUS = auto()         # +
     MINUS = auto()        # -
+    PLUS_ASSIGN = auto()  # +=
+    MINUS_ASSIGN = auto() # -=
     STAR = auto()         # *
     SLASH = auto()        # /
     PERCENT = auto()      # %
@@ -78,18 +82,24 @@ KEYWORDS = {
     "for": TokenType.FOR,
     "try": TokenType.TRY,
     "except": TokenType.EXCEPT,
+    "not": TokenType.NOT,
     "import": TokenType.IMPORT,
 }
 
 COMPARISONS = (TokenType.EQ, TokenType.NE, TokenType.LE, TokenType.LT, TokenType.GE, TokenType.GT)
 BINARY_OP = (TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT, TokenType.POWER)
 
+@dataclass
 class Token:
     """Represents a single token"""
-    def __init__(self, type: TokenType, value: Any, line:int, col:int):
-        self.type = type
-        self.value = value
-        self.line = line+1; self.col = col+1
+    type: TokenType
+    value: Any
+    line: int
+    col: int
+
+    def __post_init__(self):
+        self.line += 1
+        self.col += 1
 
     def __repr__(self) -> str:
         return f"T_{self.type.name} {self.value} : ({self.line}:{self.col})"
@@ -103,15 +113,14 @@ class Token:
 
 
 class Lexer:
-    def __init__(self, src_code: list[str]):
-        self.code = src_code
+    def __init__(self, src_code: str | list[str]):
+        self.code = src_code.splitlines() if isinstance(src_code, str) else src_code
         self.line = 0
         self.char = 0
         self.tokens: list[Token] = []
         self.eof = False
 
-        
-        self.start_time = time.perf_counter() 
+        self.start_time = time.perf_counter()
         self.time = 0
 
     def error(self, message: str):
@@ -127,15 +136,17 @@ class Lexer:
     def peek_char(self):
         if self.eof or not self.code:
             return '\0'
-        
-        if self.char < len(self.code[self.line]) - 1:
+
+        if self.char + 1 < len(self.code[self.line]):
             return self.code[self.line][self.char + 1]
-        else:
-            # Виправлено: забрали -1
-            if self.line + 1 < len(self.code): 
-                return self.code[self.line + 1][0]
-            else:
-                return '\0'
+
+        next_line = self.line + 1
+        while next_line < len(self.code) and self.code[next_line] == "":
+            next_line += 1
+
+        if next_line < len(self.code):
+            return self.code[next_line][0]
+        return '\0'
     def advance(self):
         if self.eof:
             return
@@ -150,38 +161,64 @@ class Lexer:
             else: 
                 self.eof = True
 
-    def skip_whitespace(self):
-        while self.cur_char() in " \t\n":
-            self.advance()
-    def skip_comments(self):
-        if self.cur_char() == "/":
-            if self.peek_char() == "/": # inline comment //
-                while self.cur_char() != "\n" and not self.eof:
+    def skip_ignored(self):
+        while True:
+            if self.cur_char() in " \t\n":
+                self.advance()
+                continue
+
+            if self.cur_char() == "/":
+                if self.peek_char() == "/":
+                    while not self.eof and self.cur_char() != "\n":
+                        if self.char == len(self.code[self.line]) - 1:
+                            self.advance()
+                            break
+                        self.advance()
+                    if self.cur_char() == "\n":
+                        self.advance()  # skip "\n" after comment
+                    continue
+                if self.peek_char() == "*":
                     self.advance()
-                self.advance() # skip "\n" after comments
-            if self.peek_char() == "*": # multiline comment /*
-                while not(self.cur_char()=="*" and self.peek_char() == "/") and not self.eof:
                     self.advance()
-                self.advance(); self.advance() # Skipping '*/' 
-        self.skip_whitespace()
+                    while not self.eof and not (self.cur_char() == "*" and self.peek_char() == "/"):
+                        self.advance()
+                    if self.eof:
+                        self.error("Unterminated comment")
+                    self.advance(); self.advance()  # Skipping '*/'
+                    continue
+
+            break
 
     def parse_number(self) -> Token:
         num_s = ""
-        has_dot = False
-
         start_line = self.line
         start_char = self.char
 
-        while self.cur_char().isdigit() or self.cur_char() == '.':
-            if self.cur_char() == '.':
-                if has_dot: # Якщо крапка зустрічається вдруге (напр. 1.2.3)
-                    self.error("Invalid number format")
-                has_dot = True
-            
-            num_s += self.cur_char()
+        if self.cur_char() == '.':
+            num_s += '.'
             self.advance()
-            
-        num = float(num_s) if has_dot else int(num_s)
+            if not self.cur_char().isdigit():
+                self.error("Invalid number format")
+            while self.cur_char().isdigit():
+                num_s += self.cur_char()
+                self.advance()
+        else:
+            while self.cur_char().isdigit():
+                num_s += self.cur_char()
+                self.advance()
+            if self.cur_char() == '.':
+                num_s += '.'
+                self.advance()
+                if not self.cur_char().isdigit():
+                    self.error("Invalid number format")
+                while self.cur_char().isdigit():
+                    num_s += self.cur_char()
+                    self.advance()
+
+        if self.cur_char() == '.':
+            self.error("Invalid number format")
+
+        num = float(num_s) if '.' in num_s else int(num_s)
         return Token(TokenType.NUMBER, num, start_line, start_char)
     def parse_string(self) -> Token:
         quote_char = self.cur_char()
@@ -268,11 +305,8 @@ class Lexer:
             return Token(TokenType.STAR, '*', start_line, start_char)
         
         elif char == '/':
-            if self.peek_char() == '/' or self.peek_char() == "*":
-                self.skip_comments()
-            else:
-                self.advance()
-                return Token(TokenType.SLASH, '/', start_line, start_char)
+            self.advance()
+            return Token(TokenType.SLASH, '/', start_line, start_char)
         
         elif char == '%':
             self.advance()
@@ -291,7 +325,8 @@ class Lexer:
                 self.advance()
                 self.advance()
                 return Token(TokenType.NE, '!=', start_line, start_char)
-            self.error(f"Unexpected character: {char}")
+            self.advance()
+            return Token(TokenType.NOT, '!', start_line, start_char)
         
         elif char == '<':
             if self.peek_char() == '=':
@@ -344,8 +379,7 @@ class Lexer:
 
     def tokenize(self) -> list[Token]:
         while not self.eof:
-            self.skip_whitespace()
-            self.skip_comments()
+            self.skip_ignored()
 
             char = self.cur_char()
             
@@ -353,7 +387,7 @@ class Lexer:
                 # self.push_token(Token(TokenType.EOF, '\\0'), self.line, self.char)
                 break
 
-            if char.isdigit() or char == '.':
+            if char.isdigit() or (char == '.' and self.peek_char().isdigit()):
                 self.push_token(self.parse_number())
             elif char == "\"" or char == "\'":
                 self.push_token(self.parse_string())
@@ -362,10 +396,8 @@ class Lexer:
             else:
                 self.push_token(self.parse_operators())
 
-        if self.tokens[-1].type == TokenType.EOF:
-            pass
-        else:
-            self.push_token(Token(TokenType.EOF, '\\0', self.line, self.char+1))
+        if not self.tokens or self.tokens[-1].type != TokenType.EOF:
+            self.push_token(Token(TokenType.EOF, '\0', self.line, self.char))
         
         self.time = time.perf_counter() - self.start_time
         return self.tokens

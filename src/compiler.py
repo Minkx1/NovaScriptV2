@@ -4,7 +4,8 @@ Made by Minkx1.
 """
 
 from bytecode import Instr, Bytecode, BinaryOp, Compare, Label
-from types import CodeType
+# Це треба замінити, щоб не юзати лібу Bytecode, а тільки базові можливості пітона
+from time import perf_counter
 
 from .parser import *
 from .errors import CompilerError
@@ -18,17 +19,18 @@ class Instruction:
         return f"{self.opcode:<20} {self.arg}"
 
 class BaseCompiler:
-    def __init__(self, AST: 'AbstractSyntaxTree', environment: dict):
+    def __init__(self, AST: 'AbstractSyntaxTree'):
         self.AST = AST
         self.bytecode = None
-        self.ENV = environment
         
         self.start_t = perf_counter()
         self.time = 0
 
     def compile(self):
+        self.time = 0
         self.visit(self.AST)
         self.time = perf_counter() - self.start_t
+    
         return self.bytecode
 
     def visit(self, node: 'ASTNode'):
@@ -54,11 +56,22 @@ class BaseCompiler:
 # --- ПАЙТОН КОМПІЛЯТОР ---
 
 class PyCompiler(BaseCompiler):
-    __minimum_py_version__ = "3.11"
-    def __init__(self, AST: 'AbstractSyntaxTree', environment: dict):
-        super().__init__(AST, environment)
-        self.bytecode = Bytecode()
+    __required_py_version__ = "3.11"
 
+    def __init__(self, AST: 'AbstractSyntaxTree'):
+        super().__init__(AST)
+        self.bytecode = Bytecode()
+        self.ENV = {
+            # built-in functions
+            "print": print,
+            "input": input,
+            "to_int": int.__call__,
+            "to_float": float.__call__,
+            "to_str": str.__call__,
+            "len": len
+        }
+
+        # Checking version of python
         import sys
         maj, min = sys.version_info.major, sys.version_info.minor
         if maj<3 or min<11:
@@ -163,6 +176,18 @@ class PyCompiler(BaseCompiler):
             '**': BinaryOp.POWER
         }  
         self.emit("BINARY_OP", op_map[node.op.value])
+
+    def visit_UnaryOp(self, node: 'UnaryOp'):
+        self.visit(node.operand)
+        
+        if node.op.value == '-':
+            self.emit('UNARY_NEGATIVE')
+        elif node.op.value == '+':
+            pass  # +x is just x
+        elif node.op.value == '!':
+            self.emit('UNARY_NOT')
+        else:
+            raise CompilerError(f"Unsupported unary operator: {node.op.value}")
     
     def visit_Call(self, node: "Call"):
         func_name = node.name
@@ -178,7 +203,7 @@ class PyCompiler(BaseCompiler):
             self.visit(arg) # Adds Args to stack
             i += 1
 
-        for k, v in kwargs:
+        for k, v in kwargs.items():
             kw_list.append(k)
             self.visit(v) # Adds keywords arguments value to stack
             i += 1

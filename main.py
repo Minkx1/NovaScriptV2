@@ -9,22 +9,20 @@ import argparse
 
 from rich import print
 
-import src.lexer as lexer
-import src.parser as parser
-import src.compiler as compiler
+import src.lexer as nova_lexer
+import src.parser as nova_parser
+import src.compiler as nova_compiler
 from src.errors import NovaScriptError
 
 class NovaScript:
     _script_extensions = [".ns"]
+    __version__ = "2.0.3-5"
 
     def __init__(self, sys_args: list[str]):
         self.sys_args = sys_args
-        self.TOKENS = None
-        self.AST = None
-        self.COMPILER = None
-
-        from src.env import ENV
-        self.ENV = ENV
+        self.tokens = None
+        self.ast = None
+        self.compiler = None
 
     def _parse_arguments(self) -> argparse.Namespace:
         parser_cli = argparse.ArgumentParser(
@@ -36,6 +34,11 @@ class NovaScript:
             "source_script", 
             nargs="?", 
             help="Path to a source .ns script."
+        )
+        parser_cli.add_argument(
+            "--from_string", 
+            type=str,
+            help="Execute code directly from string instead of file."
         )
         parser_cli.add_argument(
             "-d", "--debug", 
@@ -65,13 +68,19 @@ class NovaScript:
         args = parser_cli.parse_args(self.sys_args)
 
         # Валідація
-        if not args.source_script:
+        if not args.source_script and not args.from_string:
             parser_cli.print_help()
             sys.exit(1)
             
-        self._validate_script(args.source_script)
+        if args.source_script and args.from_string:
+            print(f"[bold red]Error:[/bold red] Cannot specify both source_script and --from_string.")
+            sys.exit(1)
+            
+        if args.source_script:
+            self._validate_script(args.source_script)
         
         return args
+    
     @staticmethod
     def _validate_script(script_file_name: str) -> None:
         if not os.path.exists(script_file_name):
@@ -84,19 +93,19 @@ class NovaScript:
 
     # --- Debug Printers ---
     @staticmethod
-    def _print_lexer_debug(Lexer: lexer.Lexer): 
+    def _print_lexer_debug(Lexer: nova_lexer.Lexer): 
         print(f"\n[bold cyan]================ LEXER ({Lexer.time} s.)================[/bold cyan]")
         print(f"Generated {len(Lexer.tokens)} tokens:\n")
         print(Lexer.tokens)
         print("[bold cyan]=======================================[/bold cyan]\n")
     @staticmethod
-    def _print_parser_debug(Parser: parser.Parser):
+    def _print_parser_debug(Parser: nova_parser.Parser):
         print(f"\n[bold yellow]================ PARSER ({Parser.time} s.) ================[/bold yellow]")
         print("Abstract Syntax Tree:\n")
         print(Parser.AST.to_json())
         print("[bold yellow]========================================[/bold yellow]\n")
     @staticmethod
-    def _print_compiler_debug(Compiler: compiler.BaseCompiler):
+    def _print_compiler_debug(Compiler: nova_compiler.BaseCompiler):
         print(f"\n[bold magenta]=============== COMPILER ({Compiler.time} s.) ===============[/bold magenta]")
         print("Bytecode:\n")
         for instr in Compiler.bytecode:
@@ -106,55 +115,61 @@ class NovaScript:
     def execute(self) -> None:
         config = self._parse_arguments()
 
-        with open(config.source_script, "r", encoding='utf-8') as file:
-            src_code = file.readlines()
+        if config.from_string: # reading code string
+            src_code = config.from_string.splitlines()
+        else:
+            with open(config.source_script, "r", encoding='utf-8') as file:
+                src_code = file.readlines()
 
         # ===== LEXER =====
-        self.Lexer = lexer.Lexer(src_code)
-        self.TOKENS = self.Lexer.tokenize()
+        lexer = nova_lexer.Lexer(src_code)
+        self.tokens = lexer.tokenize()
         if config.debug and config.level in ["lex", "pars", "com"]:
-            self._print_lexer_debug(self.Lexer)
+            self._print_lexer_debug(lexer)
             
         if config.level == "lex":
             return 
 
         # ===== PARSER =====
-        self.Parser = parser.Parser(self.TOKENS)
-        self.AST = self.Parser.parse_program()
+        parser = nova_parser.Parser(self.TOKENS)
+        self.ast = parser.parse_program()
         if config.debug and config.level in ["pars", "com"] :
-            self._print_parser_debug(self.Parser)
+            self._print_parser_debug(parser)
             
         if config.level == "pars":
             return 
 
         # ===== COMPILER =====
-        self.Compiler = compiler.PyCompiler(self.AST, self.ENV)
-        self.Compiler.compile()
+        compiler = nova_compiler.PyCompiler(self.ast)
+        compiler.compile()
         
         if config.debug and config.level == "com":
-            self._print_compiler_debug(self.Compiler)
+            self._print_compiler_debug(compiler)
 
         # ===== BUILD =====
-        if config.build:
-            out_file = config.source_script.replace(".ns", ".nsi")
-            with open(out_file, "w", encoding="utf-8") as f:
-                f.write("@type com\n\n")
-                for instr in self.Compiler.bytecode:
-                    f.write(f"{str(instr)}\n")
-            print(f"[bold green]Build successful![/bold green] Saved bytecode dump to {out_file}")
+        # if config.build:
+        #     if config.from_string:
+        #         print(f"[bold red]Error:[/bold red] --build is not supported with --from_string.")
+        #         sys.exit(1)
+        #     out_file = config.source_script.replace(".ns", ".nsi")
+        #     with open(out_file, "w", encoding="utf-8") as f:
+        #         f.write("@type com\n\n")
+        #         for instr in self.Compiler.bytecode:
+        #             f.write(f"{str(instr)}\n")
+        #     print(f"[bold green]Build successful![/bold green] Saved bytecode dump to {out_file}")
 
         # ===== EXECUTION =====
         if config.execute:
             print("\n[bold green]--- PROGRAM EXECUTION ---[/bold green]")
-            self.Compiler.execute()
+            compiler.execute()
 
 
 if __name__ == "__main__":
-    args = "example1.ns --debug --level=com -e".split(" ")
-    # args = sys.argv[1:] 
+    # args = "example1.ns --debug --level=com -e".split(" ")
+    args = sys.argv[1:] 
     
     if not args:
         args = ['-h']
     
-    NS = NovaScript(args)
-    NS.execute()
+    ns = NovaScript(args)
+    ns.execute()

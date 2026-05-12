@@ -1,13 +1,12 @@
-import sys
-print(sys.version_info.minor)
+def main():
+    def sum(a, b, zen=False):
+        anti_zen = True
+        if zen == True: anti_zen = False
+        trans = "Halo!"
+        c = a + b
+        return (c, zen)
+    
+    # print(sum(1, 1))
 
 import dis
-def main():
-    a = 5
-    if(a%2 == 0):
-        print("1")
-    while(a>0):
-        print(a)
-        a = a-1
-
 print(dis.dis(main))

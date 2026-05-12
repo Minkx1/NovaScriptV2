@@ -1,5 +1,6 @@
 import std.math 
-//import python.threading as t
+//import py.threading as t
+//import py.pygame
 
 def main(args: string){
     print("Hello World");
