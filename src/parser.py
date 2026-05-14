@@ -348,6 +348,9 @@ class Parser:
 
         return WhileStatement(condition, body)
 
+    def parse_func(self, name):
+        self.advance()  # skip func
+
     def parse_call(self, name) -> Call:
         self.expect(TokenType.LPAREN)
         args = []
@@ -481,12 +484,7 @@ class Parser:
             self.expect(TokenType.RPAREN)
             return expr
 
-        # elif tok.type == TokenType.SEMICOLON: # SEMICOLON впринципі не має попасти в експрешн.
-        #     return
         else:
             raise ParserError(
                 f"Unexpected token in expression: {tok.type} at {tok.pos}"
             )
-
-
-# EOF

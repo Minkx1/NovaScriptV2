@@ -4,7 +4,6 @@ Made by Minkx1.
 """
 
 import time
-from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Optional
 
@@ -89,13 +88,10 @@ KEYWORDS = {
 COMPARISONS = (TokenType.EQ, TokenType.NE, TokenType.LE, TokenType.LT, TokenType.GE, TokenType.GT)
 BINARY_OP = (TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT, TokenType.POWER)
 
-@dataclass
 class Token:
     """Represents a single token"""
-    type: TokenType
-    value: Any
-    line: int
-    col: int
+    def __init__(self, type: TokenType, value: Any, line: int, col: int):
+        pass
 
     def __post_init__(self):
         self.line += 1
