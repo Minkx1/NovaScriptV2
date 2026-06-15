@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Literal as LiteralType
 
-from .errors import NovaScriptError, ParserError
+from .errors import ParserError
 from .lexer import TokenType, Token, COMPARISONS
 
 
@@ -85,7 +85,9 @@ class Identifier(ASTNode):
     value: str
 
     def __init__(self, token_or_str: Token | str):
-        self.value = token_or_str.value if isinstance(token_or_str, Token) else token_or_str
+        self.value = (
+            token_or_str.value if isinstance(token_or_str, Token) else token_or_str
+        )
         if not isinstance(self.value, str):
             raise ParserError("Identifier value must be a string")
 
@@ -94,7 +96,7 @@ class Identifier(ASTNode):
 
 
 @dataclass
-class Assign(ASTNode):
+class AssignmentStatement(ASTNode):
     target: Identifier
     value: ASTNode
 
@@ -107,8 +109,9 @@ class Assign(ASTNode):
 
 
 @dataclass
-class BinOp(ASTNode):
+class BinaryOperation(ASTNode):
     """+, -, *, /, %"""
+
     left: ASTNode
     op: Token
     right: ASTNode
@@ -123,7 +126,22 @@ class BinOp(ASTNode):
 
 
 @dataclass
-class BoolOp(ASTNode):
+class UnaryOperation(ASTNode):
+    """Unary operators: -, +, !"""
+
+    op: Token
+    operand: ASTNode
+
+    def to_json(self):
+        return {
+            "type": "Unary Expression",
+            "operator": self.op.value,
+            "operand": self.operand.to_json(),
+        }
+
+
+@dataclass
+class BooleanOperation(ASTNode):
     op1: ASTNode
     operation: str
     op2: ASTNode
@@ -144,22 +162,66 @@ class BoolOp(ASTNode):
         }
 
 
+class IfStatement(ASTNode):
+    def __init__(
+        self,
+        condition: BooleanOperation,
+        body: BlockStatement,
+        elif_list: list[tuple[ASTNode, BlockStatement]] | None = None,
+        else_body: BlockStatement | None = None,
+    ):
+        self.condition = condition
+        self.body = body
+        self.elif_list = elif_list or []
+        self.else_body = else_body
+
+    def to_json(self):
+        j = {
+            "type": "If Statement",
+            "If": {
+                "condition": self.condition.to_json(),
+                "body": self.body.to_json(),
+            },
+        }
+        if self.elif_list:
+            j["Elif"] = [
+                {"condition": c.to_json(), "body": b.to_json()}
+                for c, b in self.elif_list
+            ]
+        if self.else_body:
+            j["Else"] = self.else_body.to_json()
+
+        return j
+
+
 @dataclass
-class UnaryOp(ASTNode):
-    """Unary operators: -, +, !"""
-    op: Token
-    operand: ASTNode
+class WhileStatement(ASTNode):
+    condition: BooleanOperation
+    body: BlockStatement
 
     def to_json(self):
         return {
-            "type": "Unary Expression",
-            "operator": self.op.value,
-            "operand": self.operand.to_json(),
+            "type": "While Statement",
+            "condition": self.condition.to_json(),
+            "body": self.body.to_json(),
         }
 
 
 @dataclass
-class Call(ASTNode):
+class FunctionDeclarationStatement(ASTNode):
+    name: Identifier
+    body: BlockStatement
+
+    def to_json(self):
+        return {
+            "type": "While Statement",
+            "condition": self.condition.to_json(),
+            "body": self.body.to_json(),
+        }
+
+
+@dataclass
+class FunctionCallStatement(ASTNode):
     name: str
     args: list[ASTNode]
     kwargs: dict[str, ASTNode] = field(default_factory=dict)
@@ -170,45 +232,6 @@ class Call(ASTNode):
             "name": self.name,
             "args": [a.to_json() for a in self.args],
             "kwargs": {k: v.to_json() for k, v in self.kwargs.items()},
-        }
-
-
-@dataclass
-class IfStatement(ASTNode):
-    condition: BoolOp
-    body: BlockStatement
-    elif_dict: dict[BoolOp, BlockStatement] = field(default_factory=dict)
-    else_body: BlockStatement | None = None
-
-    def to_json(self):
-        j = {
-            "type": "If Statement",
-            "If": {
-                "condition": self.condition.to_json(),
-                "body": self.body.to_json(),
-            },
-        }
-        if self.elif_dict:
-            j["Elif"] = [
-                {"condition": c.to_json(), "body": b.to_json()}
-                for c, b in self.elif_dict.items()
-            ]
-        if self.else_body:
-            j["Else"] = self.else_body.to_json()
-
-        return j
-
-
-@dataclass
-class WhileStatement(ASTNode):
-    condition: BoolOp
-    body: BlockStatement
-
-    def to_json(self):
-        return {
-            "type": "While Statement",
-            "condition": self.condition.to_json(),
-            "body": self.body.to_json(),
         }
 
 
@@ -290,7 +313,9 @@ class Parser:
 
     # ADDITIONAL
 
-    def parse_identifier(self) -> Identifier | Assign | Call:
+    def parse_identifier(
+        self,
+    ) -> Identifier | AssignmentStatement | FunctionCallStatement:
         id_node = Identifier(self.cur_tok)
         self.advance()
 
@@ -301,7 +326,7 @@ class Parser:
         elif self.cur_tok.type == TokenType.ASSIGN:
             self.advance()
             value = self.parse_expression()
-            expr = Assign(id_node, value)
+            expr = AssignmentStatement(id_node, value)
             return expr
 
         return id_node
@@ -315,19 +340,19 @@ class Parser:
 
         body = self.parse_block_statement()
 
-        elifs = {}
+        elifs: list[tuple[ASTNode, BlockStatement]] = []
         else_body = None
 
         while self.cur_tok.type == TokenType.ELIF:
             self.advance()
 
             self.expect(TokenType.LPAREN)
-            elif_cond = self.parse_expression()
+            elif_cond: BooleanOperation = self.parse_expression()
             self.expect(TokenType.RPAREN)
 
             elif_body = self.parse_block_statement()
 
-            elifs[elif_cond] = elif_body
+            elifs.append((elif_cond, elif_body))
 
         if self.cur_tok.type == TokenType.ELSE:
             self.advance()
@@ -351,7 +376,7 @@ class Parser:
     def parse_func(self, name):
         self.advance()  # skip func
 
-    def parse_call(self, name) -> Call:
+    def parse_call(self, name) -> FunctionCallStatement:
         self.expect(TokenType.LPAREN)
         args = []
         kwargs = {}
@@ -368,24 +393,23 @@ class Parser:
             if self.cur_tok.type == TokenType.COMMA:
                 self.advance()
         self.expect(TokenType.RPAREN)
-        return Call(name, args, kwargs)
+        return FunctionCallStatement(name, args, kwargs)
 
     def parse_block_statement(self) -> BlockStatement:
         self.expect(TokenType.LBRACE)
         stmts = []
         while (
-            self.cur_tok.type != TokenType.RBRACE 
-            and self.cur_tok.type != TokenType.EOF
+            self.cur_tok.type != TokenType.RBRACE and self.cur_tok.type != TokenType.EOF
         ):
             s = self.parse_statement()
             if s is not None:
                 stmts.append(s)
-        
+
         if self.cur_tok.type == TokenType.EOF:
             raise ParserError(
                 f"Unexpected end of file: expected '}}' to close block at line {self.tokens[-1].pos[0]}"
             )
-        
+
         self.expect(TokenType.RBRACE)
         return BlockStatement(stmts)
 
@@ -399,8 +423,10 @@ class Parser:
     def parse_comparison_expr(self) -> ASTNode | None:
         left = self.parse_additive_expr()
         if left is None:
-            raise ParserError(f"Expected expression in comparison at {self.cur_tok.pos}")
-        
+            raise ParserError(
+                f"Expected expression in comparison at {self.cur_tok.pos}"
+            )
+
         while self.cur_tok.type in COMPARISONS:
             op = self.cur_tok
             self.advance()
@@ -409,7 +435,7 @@ class Parser:
                 raise ParserError(
                     f"Expected expression after '{op.value}' operator at {op.pos}"
                 )
-            left = BoolOp(left, op, right)
+            left = BooleanOperation(left, op, right)
         return left
 
     def parse_additive_expr(self) -> ASTNode | None:
@@ -418,7 +444,7 @@ class Parser:
             op = self.cur_tok
             self.advance()
             right = self.parse_term_expr()
-            left = BinOp(left, op, right)
+            left = BinaryOperation(left, op, right)
         return left
 
     def parse_term_expr(self) -> ASTNode | None:
@@ -427,7 +453,7 @@ class Parser:
             op = self.cur_tok
             self.advance()
             right = self.parse_factor_expr()
-            left = BinOp(left, op, right)
+            left = BinaryOperation(left, op, right)
         return left
 
     def parse_factor_expr(self) -> ASTNode | None:
@@ -436,29 +462,31 @@ class Parser:
             op = self.cur_tok
             self.advance()
             right = self.parse_unary_expr()
-            left = BinOp(left, op, right)
+            left = BinaryOperation(left, op, right)
         return left
 
     def parse_unary_expr(self) -> ASTNode | None:
         """Parse unary operators: -, +, !"""
         tok = self.cur_tok
-        
+
         if tok.type in (TokenType.MINUS, TokenType.PLUS):
             op = self.cur_tok
             self.advance()
             operand = self.parse_unary_expr()  # Right associative
             if operand is None:
-                raise ParserError(f"Expected expression after unary '{op.value}' at {op.pos}")
-            return UnaryOp(op, operand)
-        
+                raise ParserError(
+                    f"Expected expression after unary '{op.value}' at {op.pos}"
+                )
+            return UnaryOperation(op, operand)
+
         elif tok.type == TokenType.NOT:  # Assuming TokenType.NOT exists for '!'
             op = self.cur_tok
             self.advance()
             operand = self.parse_unary_expr()
             if operand is None:
                 raise ParserError(f"Expected expression after NOT '!' at {op.pos}")
-            return UnaryOp(op, operand)
-        
+            return UnaryOperation(op, operand)
+
         return self.parse_primary_expr()
 
     def parse_primary_expr(self) -> None | ASTNode:
@@ -488,3 +516,9 @@ class Parser:
             raise ParserError(
                 f"Unexpected token in expression: {tok.type} at {tok.pos}"
             )
+
+    def serialize(self, path: str):
+        import json
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.AST.to_json(), f, indent=4)

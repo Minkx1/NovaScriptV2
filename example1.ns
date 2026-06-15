@@ -1,4 +1,4 @@
-print("Адовий калькулятор");
+print("Калькулятор");
 command = "";
 while (command != "exit"){
     command = input("Введіть команду (add, sub, mul, div) або 'exit'");
@@ -31,4 +31,3 @@ while (command != "exit"){
         print("Невідома команда. Спробуйте ще раз.");
     }
 }
-// input("");

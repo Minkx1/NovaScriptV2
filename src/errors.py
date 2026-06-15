@@ -3,16 +3,23 @@ NovaScriptV2 - Errors
 Made by Minkx1.
 """
 
-class NovaScriptError(Exception):
-    pass
 
-class LexerError(NovaScriptError):
-    pass
-class ParserError(NovaScriptError):
-    pass
-class ValidatorError(NovaScriptError):
-    pass
-class SyntaxError(NovaScriptError):
-    pass
-class CompilerError(NovaScriptError):
-    pass
+class NovaScriptError(Exception): ...
+
+
+class LexerError(NovaScriptError): ...
+
+
+class ParserError(NovaScriptError): ...
+
+
+class NovaValidatorError(NovaScriptError): ...
+
+
+class SyntaxError(NovaScriptError): ...
+
+
+class GeneratorError(NovaScriptError): ...
+
+
+class NovaCompilerError(NovaScriptError): ...

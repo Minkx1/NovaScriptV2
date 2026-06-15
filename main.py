@@ -11,8 +11,8 @@ from rich import print
 
 import src.lexer as nova_lexer
 import src.parser as nova_parser
-import src.compiler as nova_compiler
-from src.errors import NovaScriptError
+import src.icg as nova_icg
+# from src.errors import NovaScriptError
 
 class NovaScript:
     _script_extensions = [".ns"]
@@ -73,7 +73,7 @@ class NovaScript:
             sys.exit(1)
             
         if args.source_script and args.from_string:
-            print(f"[bold red]Error:[/bold red] Cannot specify both source_script and --from_string.")
+            print("[bold red]Error:[/bold red] Cannot specify both source_script and --from_string.")
             sys.exit(1)
             
         if args.source_script:
@@ -105,14 +105,14 @@ class NovaScript:
         print(Parser.AST.to_json())
         print("[bold yellow]========================================[/bold yellow]\n")
     @staticmethod
-    def _print_compiler_debug(Compiler: nova_compiler.BaseCompiler):
-        print(f"\n[bold magenta]=============== COMPILER ({Compiler.time} s.) ===============[/bold magenta]")
+    def _print_generator_debug(Generator: nova_icg.BaseGenerator):
+        print(f"\n[bold magenta]=============== Intermediate-Code Generator ({Generator.time} s.) ===============[/bold magenta]")
         print("Bytecode:\n")
-        for instr in Compiler.bytecode:
+        for instr in Generator.bytecode:
             print(instr)
         print("[bold magenta]========================================[/bold magenta]\n")
 
-    def execute(self) -> None:
+    def run(self) -> None:
         config = self._parse_arguments()
 
         if config.from_string: # reading code string
@@ -131,7 +131,7 @@ class NovaScript:
             return 
 
         # ===== PARSER =====
-        parser = nova_parser.Parser(self.TOKENS)
+        parser = nova_parser.Parser(self.tokens)
         self.ast = parser.parse_program()
         if config.debug and config.level in ["pars", "com"] :
             self._print_parser_debug(parser)
@@ -139,37 +139,27 @@ class NovaScript:
         if config.level == "pars":
             return 
 
-        # ===== COMPILER =====
-        compiler = nova_compiler.PyCompiler(self.ast)
-        compiler.compile()
+        # ===== ICG =====
+        icg = nova_icg.PyVMInterpreter(self.ast)
+        icg.generate()
         
         if config.debug and config.level == "com":
-            self._print_compiler_debug(compiler)
-
-        # ===== BUILD =====
-        # if config.build:
-        #     if config.from_string:
-        #         print(f"[bold red]Error:[/bold red] --build is not supported with --from_string.")
-        #         sys.exit(1)
-        #     out_file = config.source_script.replace(".ns", ".nsi")
-        #     with open(out_file, "w", encoding="utf-8") as f:
-        #         f.write("@type com\n\n")
-        #         for instr in self.Compiler.bytecode:
-        #             f.write(f"{str(instr)}\n")
-        #     print(f"[bold green]Build successful![/bold green] Saved bytecode dump to {out_file}")
+            self._print_generator_debug(icg)
 
         # ===== EXECUTION =====
         if config.execute:
-            print("\n[bold green]--- PROGRAM EXECUTION ---[/bold green]")
-            compiler.execute()
-
+            print("\n[bold green]--- PROGRAM EXECUTION ---[/bold green]\n")
+            try:
+                icg.execute()
+            except AttributeError:
+                print(f"[ERROR]: current configuration of ICG({type(icg).__name__}) doesn't support executing bytecode immediately.")
 
 if __name__ == "__main__":
-    # args = "example1.ns --debug --level=com -e".split(" ")
-    args = sys.argv[1:] 
+    args = "example1.ns --debug --level=com -e".split(" ")
+    # args = sys.argv[1:] 
     
     if not args:
         args = ['-h']
     
     ns = NovaScript(args)
-    ns.execute()
+    ns.run()

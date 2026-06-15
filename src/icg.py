@@ -1,14 +1,13 @@
 """
-NovaScriptV2 - Compiler
+NovaScriptV2 - Intermidiate-Code Generator
 Made by Minkx1.
 """
 
 from bytecode import Instr, Bytecode, BinaryOp, Compare, Label
-# Це треба замінити, щоб не юзати лібу Bytecode, а тільки базові можливості пітона
 from time import perf_counter
 
-from .parser import *
-from .errors import CompilerError
+from .parser import ASTNode, AbstractSyntaxTree, Literal, Identifier, AssignmentStatement, BinaryOperation, UnaryOperation, BooleanOperation, BlockStatement, IfStatement, WhileStatement, FunctionCallStatement, FunctionDeclarationStatement 
+from .errors import GeneratorError
 
 class Instruction:
     def __init__(self, opcode: str, arg=None):
@@ -18,28 +17,29 @@ class Instruction:
     def __repr__(self):
         return f"{self.opcode:<20} {self.arg}"
 
-class BaseCompiler:
-    def __init__(self, AST: 'AbstractSyntaxTree'):
+class BaseGenerator:
+    def __init__(self, AST: AbstractSyntaxTree):
         self.AST = AST
         self.bytecode = None
         
         self.start_t = perf_counter()
         self.time = 0
 
-    def compile(self):
+    def generate(self):
+        """Main function of `Generator` class. It starts from the top of AST and generates **intermediate bytecode**."""
         self.time = 0
         self.visit(self.AST)
         self.time = perf_counter() - self.start_t
     
         return self.bytecode
 
-    def visit(self, node: 'ASTNode'):
+    def visit(self, node: ASTNode):
         method_name = f'visit_{type(node).__name__}'
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)
 
-    def generic_visit(self, node: 'ASTNode'):
-        raise CompilerError(f"No method visit_{type(node).__name__}")
+    def generic_visit(self, node: ASTNode):
+        raise GeneratorError(f"No method visit_{type(node).__name__}")
     
     def execute(self):
         raise NotImplementedError
@@ -49,16 +49,16 @@ class BaseCompiler:
         delta_t = time.perf_counter()-execution_start_time
         print(f"\n\nExecuted in {delta_t:0.4f} seconds.")
         try:
-            input("Press ENTER to continue...")
+            input("Press <ENTER> to continue...")
         except KeyboardInterrupt:
             pass
 
 # --- ПАЙТОН КОМПІЛЯТОР ---
 
-class PyCompiler(BaseCompiler):
+class PyVMGenerator(BaseGenerator):
     __required_py_version__ = "3.11"
 
-    def __init__(self, AST: 'AbstractSyntaxTree'):
+    def __init__(self, AST: AbstractSyntaxTree):
         super().__init__(AST)
         self.bytecode = Bytecode()
         self.ENV = {
@@ -75,28 +75,29 @@ class PyCompiler(BaseCompiler):
         import sys
         maj, min = sys.version_info.major, sys.version_info.minor
         if maj<3 or min<11:
-            raise CompilerError(f"Python Version {sys.version_info.major}.{sys.version_info.minor} is not compatible with this version of Pyhon Bytecode Compiler. Please ensure to have python {PyCompiler.__minimum_py_version__}+")
+            raise GeneratorError(f"Python Version {sys.version_info.major}.{sys.version_info.minor} is not compatible with this version of Pyhon Bytecode Compiler. Please ensure to have python {PyVMGenerator.__minimum_py_version__}")
 
     def emit(self, name: str, *arg):
         self.bytecode.append(Instr(name, *arg))
 
-    def visit_AbstractSyntaxTree(self, node: 'AbstractSyntaxTree'):
+    def visit_AbstractSyntaxTree(self, node: AbstractSyntaxTree):
         for stmt in node.statements:
             self.visit(stmt)
 
         self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
     
-    def visit_BlockStatement(self, node: "BlockStatement"):
+    def visit_BlockStatement(self, node: BlockStatement):
         for stmt in node.statements:
             self.visit(stmt)
 
-    def visit_Literal(self, node: 'Literal'):
+    def visit_Literal(self, node: Literal):
         self.emit('LOAD_CONST', node.value)
-    def visit_Identifier(self, node: 'Identifier'):
+    
+    def visit_Identifier(self, node: Identifier):
         self.emit('LOAD_NAME', node.value)
 
-    def visit_BoolOp(self, node:"BoolOp"):
+    def visit_BooleanOperation(self, node: BooleanOperation):
         op1: ASTNode = node.op1
         op2: ASTNode = node.op2
         oper: str = node.operation
@@ -115,7 +116,7 @@ class PyCompiler(BaseCompiler):
         self.emit('COMPARE_OP', compare_map[oper])
 
 
-    def visit_IfStatement(self, node:"IfStatement"):
+    def visit_IfStatement(self, node: IfStatement):
         end_label = Label()
     
         # IF
@@ -128,8 +129,8 @@ class PyCompiler(BaseCompiler):
         self.bytecode.append(else_label)
 
         # ELIFS
-        if node.elif_dict:
-            for elif_cond, elif_body in node.elif_dict.items():
+        if node.elif_list:
+            for elif_cond, elif_body in node.elif_list:
                 next_elif_label = Label()
                 self.visit(elif_cond)
                 self.emit('POP_JUMP_IF_FALSE', next_elif_label)
@@ -144,7 +145,7 @@ class PyCompiler(BaseCompiler):
 
         self.bytecode.append(end_label)
 
-    def visit_WhileStatement(self, node:"WhileStatement"):
+    def visit_WhileStatement(self, node: WhileStatement):
         start_label = Label()
         end_label = Label()
 
@@ -159,11 +160,11 @@ class PyCompiler(BaseCompiler):
         
         self.bytecode.append(end_label)
 
-    def visit_Assign(self, node: 'Assign'):
+    def visit_AssignmentStatement(self, node: AssignmentStatement):
         self.visit(node.value)
         self.emit('STORE_NAME', node.target.value)
 
-    def visit_BinOp(self, node: 'BinOp'):
+    def visit_BinaryOperation(self, node: BinaryOperation):
         self.visit(node.left)
         self.visit(node.right)
         
@@ -177,7 +178,7 @@ class PyCompiler(BaseCompiler):
         }  
         self.emit("BINARY_OP", op_map[node.op.value])
 
-    def visit_UnaryOp(self, node: 'UnaryOp'):
+    def visit_UnaryOperation(self, node: UnaryOperation):
         self.visit(node.operand)
         
         if node.op.value == '-':
@@ -187,12 +188,12 @@ class PyCompiler(BaseCompiler):
         elif node.op.value == '!':
             self.emit('UNARY_NOT')
         else:
-            raise CompilerError(f"Unsupported unary operator: {node.op.value}")
+            raise GeneratorError(f"Unsupported unary operator: {node.op.value}")
     
-    def visit_Call(self, node: "Call"):
+    def visit_FunctionCallStatement(self, node: FunctionCallStatement):
         func_name = node.name
-        args:list[ASTNode] = node.args
-        kwargs:dict[str, ASTNode] = node.kwargs
+        args: list[ASTNode] = node.args
+        kwargs: dict[str, ASTNode] = node.kwargs
 
         self.emit('LOAD_GLOBAL', (True, func_name))
         
@@ -211,10 +212,13 @@ class PyCompiler(BaseCompiler):
 
         self.emit('KW_NAMES', kw_list)
         self.emit('CALL', i)
-        
+
+
+class PyVMInterpreter(PyVMGenerator):
+
     def execute(self, finish_and_wait:bool = True):
         if not self.bytecode:
-            self.compile()
+            self.generate()
 
         start_time = perf_counter()
         exec(self.bytecode.to_code(), self.ENV)
